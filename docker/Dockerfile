@@ -509,6 +509,7 @@ ARG PIP_EXTRA_INDEX_URL UV_EXTRA_INDEX_URL
 ENV UV_HTTP_TIMEOUT=500
 
 COPY requirements/kv_connectors.txt requirements/kv_connectors.txt
+COPY requirements/audio.txt requirements/audio.txt
 
 # install additional dependencies for openai api server
 RUN --mount=type=cache,target=/root/.cache/uv \
@@ -520,7 +521,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     else \
         BITSANDBYTES_VERSION="0.46.1"; \
     fi; \
-    uv pip install --system accelerate hf_transfer modelscope "bitsandbytes>=${BITSANDBYTES_VERSION}" 'timm==0.9.10' boto3 runai-model-streamer runai-model-streamer[s3]
+    uv pip install --system accelerate hf_transfer modelscope "bitsandbytes>=${BITSANDBYTES_VERSION}" 'timm==0.9.10' boto3 runai-model-streamer runai-model-streamer[s3] \
+    && uv pip install --system -r requirements/audio.txt
 
 ENV VLLM_USAGE_SOURCE production-docker-image
 

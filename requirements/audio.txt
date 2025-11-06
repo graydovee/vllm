@@ -1,0 +1,7 @@
+# Audio processing dependencies for vLLM
+# Required for audio input processing in multimodal models and audio transcription endpoints
+
+librosa==0.10.2.post1  # Audio analysis and processing
+soundfile==0.12.1      # Audio file I/O
+jiwer==3.0.5          # Word Error Rate (WER) for audio evaluation
+

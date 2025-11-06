@@ -130,6 +130,20 @@ class MediaConnector:
             connection = self.connection
             data = connection.get_bytes(url, timeout=fetch_timeout)
 
+            # Try to infer media type from URL extension for audio
+            if isinstance(media_io, AudioMediaIO):
+                path_lower = url_spec.path.lower()
+                media_type = None
+                if path_lower.endswith('.pcm') or path_lower.endswith('.raw'):
+                    media_type = 'audio/pcm'
+                elif path_lower.endswith('.wav'):
+                    media_type = 'audio/wav'
+                elif path_lower.endswith('.mp3'):
+                    media_type = 'audio/mp3'
+                
+                # AudioMediaIO.load_bytes accepts media_type parameter
+                return media_io.load_bytes(data, media_type=media_type)
+            
             return media_io.load_bytes(data)
 
         if url_spec.scheme == "data":
@@ -154,6 +168,23 @@ class MediaConnector:
         if url_spec.scheme.startswith("http"):
             connection = self.connection
             data = await connection.async_get_bytes(url, timeout=fetch_timeout)
+            
+            # Try to infer media type from URL extension for audio
+            if isinstance(media_io, AudioMediaIO):
+                path_lower = url_spec.path.lower()
+                media_type = None
+                if path_lower.endswith('.pcm') or path_lower.endswith('.raw'):
+                    media_type = 'audio/pcm'
+                elif path_lower.endswith('.wav'):
+                    media_type = 'audio/wav'
+                elif path_lower.endswith('.mp3'):
+                    media_type = 'audio/mp3'
+                
+                # AudioMediaIO.load_bytes accepts media_type parameter
+                future = loop.run_in_executor(global_thread_pool,
+                                              media_io.load_bytes, data, media_type)
+                return await future
+            
             future = loop.run_in_executor(global_thread_pool,
                                           media_io.load_bytes, data)
             return await future

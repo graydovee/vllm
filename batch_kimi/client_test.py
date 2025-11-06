@@ -27,6 +27,7 @@ class BenchmarkConfig:
     base_url: str = "http://localhost:16415"
     api_key: str = "agorabestvip8"
     audio_file: str = "sample.pcm"
+    audio_url: Optional[str] = None  # 音频HTTP URL，如果提供则优先使用
     concurrent_users: int = 10
     total_requests: int = 100
     timeout: int = 30
@@ -69,8 +70,31 @@ class SOSBenchmark:
         payload = {"ts": int(time.time())}
         return jwt.encode(payload, self.config.api_key, algorithm="HS256")
 
+    def _get_audio_format_from_filename(self, filename: str) -> str:
+        """根据文件扩展名获取音频格式"""
+        ext = os.path.splitext(filename)[1].lower()
+        
+        # 扩展名到 MIME 类型的映射
+        format_map = {
+            '.pcm': 'pcm',
+            '.raw': 'pcm',
+            '.wav': 'wav',
+            '.mp3': 'mp3',
+        }
+        
+        # 返回对应的格式，默认为 pcm
+        audio_format = format_map.get(ext, 'pcm')
+        return audio_format
+
     def load_audio_data(self) -> bool:
         """加载音频数据并准备测试数据"""
+        # 如果提供了 audio_url，直接使用 HTTP URL，不需要加载本地文件
+        if self.config.audio_url:
+            self.audio_data = self.config.audio_url
+            print(f"✅ 使用音频 HTTP URL: {self.audio_data}")
+            return True
+        
+        # 否则从本地文件加载
         script_dir = os.path.dirname(os.path.abspath(__file__))
         audio_file_path = os.path.join(script_dir, self.config.audio_file)
 
@@ -78,12 +102,18 @@ class SOSBenchmark:
             print(f"❌ 音频文件不存在: {audio_file_path}")
             return False
 
+        # 根据文件扩展名确定音频格式
+        audio_format = self._get_audio_format_from_filename(audio_file_path)
+        print(f"📄 检测到音频格式: {audio_format} (基于文件扩展名)")
+
         try:
             if self.config.test_mode == "single":
                 # 单次完整音频模式
                 with open(audio_file_path, "rb") as f:
                     audio_bytes = f.read()
-                self.audio_data = base64.b64encode(audio_bytes).decode("utf-8")
+                # 使用 data URL 格式，根据文件扩展名指定格式
+                audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+                self.audio_data = f"data:audio/{audio_format};base64,{audio_b64}"
                 print(f"✅ 加载完整音频文件，大小: {len(audio_bytes)} bytes")
 
             else:
@@ -109,7 +139,9 @@ class SOSBenchmark:
                     chunk_pcm_data = pcm_data[: int(end_sample)]
                     chunk_bytes = chunk_pcm_data.tobytes()
                     chunk_data_b64 = base64.b64encode(chunk_bytes).decode("utf-8")
-                    self.chunk_data_list.append(chunk_data_b64)
+                    # 使用 data URL 格式，根据文件扩展名指定格式
+                    chunk_data_url = f"data:audio/{audio_format};base64,{chunk_data_b64}"
+                    self.chunk_data_list.append(chunk_data_url)
 
             return True
 
@@ -133,7 +165,7 @@ class SOSBenchmark:
                         },
                         {
                             "type": "audio_url",
-                            "audio_url": {"url": f"data:audio/wav;base64,{self.audio_data}"},
+                            "audio_url": {"url": self.audio_data},
                         }
                     ]
                 }
@@ -141,6 +173,7 @@ class SOSBenchmark:
             "stream": False,
             "temperature": 0.0,
             "top_k": 1,
+            "max_tokens": 1,
             "repetition_penalty": 1.0,
             "stop_token_ids": [151667],
         }
@@ -245,7 +278,7 @@ class SOSBenchmark:
                         },
                         {
                             "type": "audio_url",
-                            "audio_url": {"url": f"data:audio/wav;base64,{self.audio_data}"},
+                            "audio_url": {"url": self.chunk_data_list[chunk_idx]},
                         }
                     ]
                 }
@@ -253,6 +286,7 @@ class SOSBenchmark:
             "stream": False,
             "temperature": 0.0,
             "top_k": 1,
+            "max_tokens": 1,
             "repetition_penalty": 1.0,
             "stop_token_ids": [151667],
         }
@@ -521,6 +555,9 @@ def create_parser() -> argparse.ArgumentParser:
         "--audio-file", default="sample.pcm", help="音频文件路径 (默认: sample.pcm)"
     )
     parser.add_argument(
+        "--audio-url", default=None, help="音频HTTP URL (如提供则优先使用，支持http://或file://格式)"
+    )
+    parser.add_argument(
         "-c", "--concurrent", type=int, default=10, help="并发用户数 (默认: 10)"
     )
     parser.add_argument(
@@ -560,6 +597,7 @@ async def main():
         base_url=args.base_url,
         api_key=args.api_key,
         audio_file=args.audio_file,
+        audio_url=args.audio_url,
         concurrent_users=args.concurrent,
         total_requests=args.requests,
         timeout=args.timeout,

@@ -92,18 +92,79 @@ class AudioMediaIO(MediaIO[tuple[npt.NDArray, float]]):
         # media loaders (e.g. custom implementations)
         # for flexible control.
         self.kwargs = kwargs
+        
+        # PCM format default parameters
+        self.pcm_sample_rate = kwargs.get('pcm_sample_rate', 16000)
+        self.pcm_bit_depth = kwargs.get('pcm_bit_depth', 16)
+        self.pcm_channels = kwargs.get('pcm_channels', 1)
 
-    def load_bytes(self, data: bytes) -> tuple[npt.NDArray, float]:
-        return librosa.load(BytesIO(data), sr=None)
+    def _load_pcm_bytes(self, data: bytes) -> tuple[npt.NDArray, float]:
+        """Load PCM audio data from raw bytes.
+        
+        PCM format has no header, so we need to specify the format parameters.
+        Default: 16kHz, 16-bit, mono
+        """
+        # Determine numpy dtype based on bit depth
+        if self.pcm_bit_depth == 16:
+            dtype = np.int16
+            max_val = 32768.0
+        elif self.pcm_bit_depth == 8:
+            dtype = np.int8
+            max_val = 128.0
+        elif self.pcm_bit_depth == 24:
+            dtype = np.int32
+            max_val = 8388608.0
+        elif self.pcm_bit_depth == 32:
+            dtype = np.int32
+            max_val = 2147483648.0
+        else:
+            raise ValueError(f"Unsupported PCM bit depth: {self.pcm_bit_depth}")
+        
+        # Load PCM data as numpy array
+        audio_data = np.frombuffer(data, dtype=dtype)
+        
+        # Handle multi-channel audio
+        if self.pcm_channels > 1:
+            # Reshape to (samples, channels) and take mean across channels (convert to mono)
+            audio_data = audio_data.reshape(-1, self.pcm_channels)
+            audio_data = audio_data.mean(axis=1)
+        
+        # Normalize to float32 in range [-1.0, 1.0]
+        audio_data = audio_data.astype(np.float32) / max_val
+        
+        return audio_data, float(self.pcm_sample_rate)
+
+    def load_bytes(self, data: bytes, media_type: Optional[str] = None) -> tuple[npt.NDArray, float]:
+        # Check if it's PCM format
+        if media_type and 'pcm' in media_type.lower():
+            return self._load_pcm_bytes(data)
+        
+        # Try to load with librosa first
+        try:
+            return librosa.load(BytesIO(data), sr=None)
+        except Exception as e:
+            # If librosa fails, try PCM format as fallback
+            try:
+                return self._load_pcm_bytes(data)
+            except Exception as pcm_error:
+                # If both fail, raise the original error
+                raise e
 
     def load_base64(
         self,
         media_type: str,
         data: str,
     ) -> tuple[npt.NDArray, float]:
-        return self.load_bytes(base64.b64decode(data))
+        return self.load_bytes(base64.b64decode(data), media_type=media_type)
 
     def load_file(self, filepath: Path) -> tuple[npt.NDArray, float]:
+        # Check if it's a PCM file by extension
+        if filepath.suffix.lower() in ['.pcm', '.raw']:
+            with open(filepath, 'rb') as f:
+                data = f.read()
+            return self._load_pcm_bytes(data)
+        
+        # Otherwise use librosa
         return librosa.load(filepath, sr=None)
 
     def encode_base64(self, media: tuple[npt.NDArray, float]) -> str:
