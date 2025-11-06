@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from statistics import mean, median
 import sys
 
+thresh = .5
 
 @dataclass
 class BenchmarkConfig:
@@ -173,8 +174,10 @@ class SOSBenchmark:
             "stream": False,
             "temperature": 0.0,
             "top_k": 1,
-            "max_tokens": 1,
             "repetition_penalty": 1.0,
+            "max_completion_tokens": 1,
+            "logprobs": True,
+            "top_logprobs": 5,
             "stop_token_ids": [151667],
         }
 
@@ -201,17 +204,16 @@ class SOSBenchmark:
                         data = json.loads(response_text)
                         sos_detected = False
 
-                        if "choices" in data and len(data["choices"]) > 0:
-                            content = (
-                                data["choices"][0].get("message", {}).get("content", "")
-                            )
-                            if content:
-                                print(f"The received content is: {content}")
-                                try:
-                                    sos_result = json.loads(content)
-                                    sos_detected = sos_result.get("sos", False)
-                                except json.JSONDecodeError:
-                                    pass
+                        logprobs = data["choices"][0]["logprobs"]['content'][0]["top_logprobs"]
+                        probs = [math.exp(logprob) for logprob in [item['logprob'] for item in logprobs]]
+                        probs_norm = [prob / sum(probs) for prob in probs]
+                        tokens = [item['token'] for item in logprobs]
+                        probs = dict(zip(tokens, probs_norm))
+                        if "是" in probs and "否" in probs:
+                            sos_detected = probs["是"] > thresh
+                        else:
+                            # assert False
+                            sos_detected = data["choices"][0]["logprobs"]['content'][0]['token'] == "是"
 
                         return RequestResult(
                             success=True,
@@ -286,8 +288,10 @@ class SOSBenchmark:
             "stream": False,
             "temperature": 0.0,
             "top_k": 1,
-            "max_tokens": 1,
             "repetition_penalty": 1.0,
+            "max_completion_tokens": 1,
+            "logprobs": True,
+            "top_logprobs": 5,
             "stop_token_ids": [151667],
         }
 
@@ -314,17 +318,16 @@ class SOSBenchmark:
                         data = json.loads(response_text)
                         sos_detected = False
 
-                        if "choices" in data and len(data["choices"]) > 0:
-                            content = (
-                                data["choices"][0].get("message", {}).get("content", "")
-                            )
-                            if content:
-                                print(f"The received content is: {content}")
-                                try:
-                                    sos_result = json.loads(content)
-                                    sos_detected = sos_result.get("sos", False)
-                                except json.JSONDecodeError:
-                                    pass
+                        logprobs = data["choices"][0]["logprobs"]['content'][0]["top_logprobs"]
+                        probs = [math.exp(logprob) for logprob in [item['logprob'] for item in logprobs]]
+                        probs_norm = [prob / sum(probs) for prob in probs]
+                        tokens = [item['token'] for item in logprobs]
+                        probs = dict(zip(tokens, probs_norm))
+                        if "是" in probs and "否" in probs:
+                            sos_detected = probs["是"] > thresh
+                        else:
+                            # assert False
+                            sos_detected = data["choices"][0]["logprobs"]['content'][0]['token'] == "是"
 
                         return RequestResult(
                             success=True,
